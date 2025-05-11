@@ -1,0 +1,409 @@
+library(shiny)
+library(leaflet)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(shinydashboard)
+library(shinythemes)
+library(DT)
+library(plotly)
+library(markdown)
+library(readr)
+
+# CSS styles
+custom_css <- "
+  body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f8f9fa;
+  }
+  
+  /* Navbar styling */
+  .navbar-default {
+    background-color: #2c3e50 !important;
+    border-color: #2c3e50;
+  }
+  
+  .navbar-default .navbar-brand {
+    color: #ecf0f1 !important;
+    font-weight: bold;
+    font-size: 18px;
+  }
+  
+  .navbar-default .navbar-nav > li > a {
+    color: #ecf0f1 !important;
+    transition: all 0.3s;
+  }
+  
+  .navbar-default .navbar-nav > li > a:hover {
+    background-color: #1a242f !important;
+  }
+  
+  .navbar-default .navbar-nav > .active > a {
+    background-color: #1a242f !important;
+    font-weight: bold;
+  }
+  
+  /* Content styling */
+  .tab-content {
+    background-color: white;
+    padding: 20px;
+    border-radius: 5px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    margin-top: 10px;
+    margin-bottom: 20px;
+  }
+  
+  /* Header styling */
+  h2 {
+    color: #2c3e50;
+    border-bottom: 2px solid #3498db;
+    padding-bottom: 10px;
+    margin-top: 0;
+  }
+  
+  h3 {
+    color: #3498db;
+    margin-top: 25px;
+  }
+  
+  /* Image styling */
+  img {
+    border-radius: 5px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    transition: transform 0.3s;
+    margin-bottom: 15px;
+  }
+  
+  img:hover {
+    transform: scale(1.03);
+  }
+  
+  /* List styling */
+  ul {
+    padding-left: 20px;
+  }
+  
+  li {
+    margin-bottom: 8px;
+    line-height: 1.6;
+  }
+  
+  /* Map controls */
+  .absolute-panel {
+    border-radius: 5px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+    border: none;
+  }
+  
+  /* Plot styling */
+  .plotly.html-widget {
+    border-radius: 5px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+  }
+  
+  /* Table styling */
+  .dataTables_wrapper {
+    border-radius: 5px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    padding: 10px;
+    background-color: white;
+  }
+  
+  /* Footer styling */
+  .footer {
+    background-color: #2c3e50;
+    color: white;
+    padding: 15px;
+    text-align: center;
+    margin-top: 20px;
+    border-radius: 5px;
+    font-size: 12px;
+  }
+  
+  /* Horizontal rule */
+  hr {
+    border-top: 1px solid #ddd;
+    margin: 20px 0;
+  }
+  
+  /* Responsive adjustments */
+  @media (max-width: 768px) {
+    .tab-content {
+      padding: 15px;
+    }
+  }
+"
+
+## ---- Real Data Preparation ----
+population <- read_csv("戶數_戶_.csv") %>%
+  rename(Time = `时间`, Population = `臺東縣`, Category = `类别`)
+
+population_density <- read_csv("人口密度_人_平方公里_.csv") %>%
+  rename(Time = `时间`, Density = `臺東縣`, Category = `类别`)
+
+climate <- read.csv("orchid_island_weather.csv") %>%
+  rename(Month = `年月`, Max_Temp = `最高气温`, Min_Temp = `最低气温`, 
+         Mean_Temp = `平均气温`, Precipitation = `降水量`, 
+         Maximum_10_minute_Wind_Speed = `最大十分钟风速`, 
+         Maximum_Instantaneous_Wind_Speed = `最大瞬间风速`, 
+         Average_Relative_Humidity = `平均相对湿度`, 
+         Minimum_Relative_Humidity = `最小相对湿度`, 
+         Average_Air_Pressure = `平均气压`, 
+         Number_of_Precipitation_Days = `降水日数`, 
+         Sunshine_Duration_Hours = `日照时数`, Spot = `站点`) 
+
+ui <- navbarPage(
+  title = div(icon("island-tropical"), "Orchid Island Explorer"),
+  collapsible = TRUE,
+  footer = div(class = "footer", 
+               "Data sources: Taiwan Ministry of the Interior, Taitung County Government, Central Weather Bureau"),
+  header = tags$head(
+    tags$style(HTML(custom_css)),
+    tags$link(rel = "stylesheet", href = "https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css")
+  ),
+  theme = shinythemes::shinytheme("flatly"),
+  
+  # Tab 1: Overview
+  tabPanel(
+    "Overview",
+    h2("Orchid Island - Taiwan's Indigenous Treasure"),
+    p("Orchid Island (蘭嶼), known as Ponso no Tao ('Island of People') in the native Tao language, is a 45 km² volcanic island located 62 km off the southeastern coast of Taiwan."),
+    hr(),
+    fluidRow(
+      column(
+        width = 6,
+        h3("Key Facts (2023)"),
+        tags$ul(
+          tags$li(icon("map-marker-alt"), " Location: 22°03′N 121°32′E (Taitung County)"),
+          tags$li(icon("ruler-combined"), " Area: 45 km² (7th largest Taiwan island)"),
+          tags$li(icon("users"), " Population: 3,456 (Tao indigenous: 48.7%)")
+        )
+      ),
+      column(
+        width = 6,
+        h3("Cultural Significance"),
+        tags$ul(
+          tags$li(icon("fish"), " Flying Fish Festival (March-June)"),
+          tags$li(icon("ship"), " Hand-carved wooden boats (tatala)")
+        )
+      )
+    ),
+    hr(),
+    h3("Island Images"),
+    fluidRow(
+      column(4, tags$img(src = "https://encrypted-tbn3.gstatic.com/licensed-image?q=tbn:ANd9GcTZGbLFuiFlYO1cErM0wBj_soR-Coxub7uU2Xv6SfghJzqHNCIAyOtBDAQ4dcM6nDWESjRhPeOHU90SnoFqk0xCusjaxAYDN1DrzBWS0g", 
+                         width = "100%", class = "img-responsive")),
+      column(4, tags$img(src = "https://lh3.googleusercontent.com/p/AF1QipPVvS5DpPu4_BBXytbF3OPwE7WqtvxoRlbHwFP6=w810-h468-n-k-no", 
+                         width = "100%", class = "img-responsive"))
+    )
+  ),
+  
+  # Tab 2: Interactive Map
+  tabPanel(
+    "Interactive Map",
+    h2("Interactive Map of Orchid Island"),
+    leafletOutput("map", width = "100%", height = "500px"),
+    absolutePanel(
+      top = 10, right = 10,
+      width = 300,
+      style = "background-color: white; padding: 15px; border-radius: 5px;",
+      h4(icon("map"), " Map Controls"),
+      selectInput("map_style", "Base Map", choices = c("OpenStreetMap", "Satellite", "Terrain")),
+      checkboxInput("show_villages", "Show Villages", TRUE),
+      checkboxInput("show_terrain", "Show Elevation", TRUE)
+    )
+  ),
+  
+  # Tab 3: Population
+  tabPanel(
+    "Population",
+    h2("Population Trends"),
+    p("Explore population and density changes over time on Orchid Island."),
+    hr(),
+    fluidRow(
+      column(6, plotlyOutput("village_pop_plot")),
+      column(6, plotlyOutput("density_plot"))
+    ),
+    hr(),
+    h3("Detailed Population Data"),
+    DTOutput("population_table")
+  ),
+  
+  # Tab 4: Climate & Environment
+  tabPanel(
+    "Climate & Environment",
+    h2("Climate and Environmental Data"),
+    p("Monthly climate patterns and environmental data for Orchid Island."),
+    hr(),
+    fluidRow(
+      column(6, plotlyOutput("climate_plot")),
+      column(6, plotlyOutput("precipitation_plot"))
+    ),
+    hr(),
+    h3("Detailed Climate Data"),
+    DTOutput("geology_table")
+  )
+)
+
+server <- function(input, output, session) {
+  
+  # Interactive Map
+  output$map <- renderLeaflet({
+    villages <- data.frame(
+      Village = c("Yeyou", "Hongtou", "Iratay", "Iranmeylek", "Ivarino"),
+      Lat = c(22.043, 22.027, 22.027, 22.044, 22.037),
+      Lng = c(121.518, 121.542,  121.532, 121.550, 121.556),
+      Population = c(482, 623, 512, 598, 654)
+    )
+    
+    nearby_land <- data.frame(
+      Name = c("Taiwan Mainland", "Green Island", "Babuyan Islands", "Batanes Islands"),
+      Type = c("Mainland", "Island", "Island Group", "Island Group"),
+      Lat = c(22.75, 22.67, 19.52, 20.45),
+      Lng = c(121.1, 121.48, 121.95, 121.97),
+      Distance = c("62 km NW", "50 km N", "200 km S", "250 km S")
+    )
+    
+    landmass_icon <- makeIcon(
+      iconUrl = "https://cdn-icons-png.flaticon.com/512/854/854878.png",
+      iconWidth = 24, iconHeight = 24
+    )
+    
+    leaflet() %>%
+      addTiles() %>%
+      setView(lng = 121.52, lat = 22.05, zoom = 13) %>%  #
+      addMarkers(data = villages, lng = ~Lng, lat = ~Lat, label = ~Village) %>%
+      addMarkers(data = nearby_land, lng = ~Lng, lat = ~Lat, 
+                 label = ~paste(Name, "-", Distance),
+                 icon = landmass_icon) %>%
+      addLegend(position = "bottomright",
+                colors = c('red', 'blue'),
+                labels = c('Orchid Island Villages', 'Nearby Land Masses'))%>%
+      addScaleBar(position = "bottomleft")
+  })
+  
+  # Population plot
+  output$village_pop_plot <- renderPlotly({
+    population$year <- as.numeric(gsub("/.*","",population$Time))
+    population$Month <- as.numeric(gsub(".*/","",population$Time))
+    
+    population$TimeNumeric <- population$year + (population$Month-1)/12
+    
+    model <- lm(Population ~ TimeNumeric, data = population)
+    r_squared <- summary(model)$r.squared
+    
+    plot_ly(population, x = ~Time) %>%
+      add_markers(y = ~Population, name = "Actual Population") %>%
+      add_lines(y = ~fitted(model), name = paste0("Trend (R²=", round(r_squared, 3), ")"),
+                line = list(color = 'red', width = 3)) %>%
+      layout(
+        title = list(text = "<b>Population Over Time</b>", x = 0.05),
+        xaxis = list(
+          title = "Time",
+          type = "category",
+          rangeslider = list(visible = TRUE),
+          rangeselector = list(
+            buttons = list(
+              list(count = 1, label = "1y", step = "year", stepmode = "backward"),
+              list(count = 5, label = "5y", step = "year", stepmode = "backward"),
+              list(step = "all")
+            )
+          )
+        ),
+        yaxis = list(title = "Population"),
+        hovermode = "x unified"
+      )
+  })
+  
+  # Density plot
+  output$density_plot <- renderPlotly({
+    population_density$year <- as.numeric(gsub("/.*","",population_density$Time))
+    population_density$Month <- as.numeric(gsub(".*/","",population_density$Time))
+    
+    population_density$TimeNumeric <- population_density$year + (population_density$Month-1)/12
+    
+    model <- lm(Density ~ TimeNumeric, data = population_density)
+    r_squared <- summary(model)$r.squared
+    
+    plot_ly(population_density, x = ~Time) %>%
+      add_markers(y = ~Density, name = "Actual Density", 
+                  marker = list(color = '#2ecc71', size = 8)) %>%
+      add_lines(y = ~fitted(model), name = paste0("Trend (R²=", round(r_squared, 3), ")"),
+                line = list(color = '#e74c3c', width = 3)) %>%
+      layout(
+        title = list(text = "<b>Population Density Over Time</b>", x = 0.05),
+        xaxis = list(
+          title = "Time",
+          type = "category",
+          rangeslider = list(visible = TRUE),
+          rangeselector = list(
+            buttons = list(
+              list(count = 1, label = "1y", step = "year", stepmode = "backward"),
+              list(count = 5, label = "5y", step = "year", stepmode = "backward"),
+              list(step = "all")
+            )
+          )
+        ),
+        yaxis = list(title = "Density (people/km²)")
+      )
+  })
+  
+  # Temperature plot
+  output$climate_plot <- renderPlotly({
+    plot_ly(climate, x = ~Month) %>%
+      add_lines(y = ~Mean_Temp, name = "Average", line = list(color = 'blue', width = 3)) %>%
+      add_lines(y = ~Max_Temp, name = "Maximum", line = list(color = "red", width = 2)) %>%
+      add_lines(y = ~Min_Temp, name = "Minimum", line = list(color = "green", width = 2)) %>%
+      layout(
+        title = list(text = "<b>Temperature Trends</b>", x = 0.05),
+        xaxis = list(title = "Month"),
+        yaxis = list(title = "Temperature (°C)"),
+        plot_bgcolor = '#f8f9fa',
+        paper_bgcolor = '#ffffff',
+        hovermode = "x unified",
+        legend = list(orientation = "h", y = -0.2)
+      )
+  })
+  
+  # Precipitation plot
+  output$precipitation_plot <- renderPlotly({
+    plot_ly(climate, x = ~Month, y = ~Precipitation, type = "bar") %>%
+      layout(
+        title = list(text = "<b>Monthly Precipitation</b>", x = 0.05),
+        barmode = "stack"
+      )
+  })
+  
+  # Data tables
+  output$population_table <- renderDT({ 
+    datatable(
+      population,
+      options = list(
+        pageLength = 10,
+        scrollX = TRUE,
+        dom = 'Bfrtip',
+        buttons = c('copy', 'csv', 'excel')
+      ),
+      extensions = 'Buttons',
+      class = 'hover stripe nowrap',
+      rownames = FALSE
+    ) 
+  })
+  
+  output$geology_table <- renderDT({ 
+    datatable(
+      climate,
+      options = list(
+        pageLength = 10,
+        scrollX = TRUE,
+        dom = 'Bfrtip',
+        buttons = c('copy', 'csv', 'excel')
+      ),
+      extensions = 'Buttons',
+      class = 'hover stripe nowrap',
+      rownames = FALSE
+    )
+  })
+}
+
+shinyApp(ui = ui, server = server)
